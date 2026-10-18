@@ -23,10 +23,13 @@ struct StateKey: Hashable, Sendable {
         self.id = id
     }
 
-    init(command: RawCommand, version: ProtocolVersion) {
+    /// Longest key `StateCache` grows an unknown command's key to.
+    static let maxUnknownCommandIdBytes = 16
+
+    init(command: RawCommand, version: ProtocolVersion, unknownIdLength: Int = unknownCommandIdBytes) {
         name = command.name
         guard let ranges = Self.ranges(for: command.name, version: version) else {
-            id = Array(command.body.prefix(Self.unknownCommandIdBytes))
+            id = Array(command.body.prefix(unknownIdLength))
             return
         }
         var bytes: [UInt8] = []
@@ -49,12 +52,53 @@ struct StateKey: Hashable, Sendable {
 struct StateCache {
     private var order: [StateKey] = []
     private var values: [StateKey: [UInt8]] = [:]
+    /// Key length per unknown command, where the default turned out too short.
+    private var unknownIdLengths: [String: Int] = [:]
 
     var count: Int { order.count }
 
     mutating func removeAll() {
         order.removeAll()
         values.removeAll()
+        unknownIdLengths.removeAll()
+    }
+
+    /// Stores the latest value of `command`.
+    ///
+    /// While `learning` (the ATEM's initial state dump, which holds each piece of state once),
+    /// two different bodies under one key of an unknown command mean its key is too short:
+    /// the 2 M/E Constellation sends 32 `KBfT` that share their first 4 bytes, and replaying
+    /// only the last one lost state. The key then grows until the two bodies differ.
+    mutating func set(_ command: RawCommand, version: ProtocolVersion, learning: Bool) {
+        let encoded = command.bytes
+        var key = key(for: command, version: version)
+        if learning, CommandTable.stateKeys[command.name] == nil,
+           let existing = values[key], existing != encoded {
+            let body = existing.dropFirst(RawCommand.headerLength)
+            let differsAt = zip(body, command.body).enumerated().first { $0.element.0 != $0.element.1 }?.offset
+                ?? min(body.count, command.body.count)
+            let length = differsAt + 1
+            if length > key.id.count, length <= StateKey.maxUnknownCommandIdBytes {
+                rekey(command.name, idLength: length)
+                key = self.key(for: command, version: version)
+            }
+        }
+        set(key, encoded: encoded)
+    }
+
+    private func key(for command: RawCommand, version: ProtocolVersion) -> StateKey {
+        StateKey(command: command, version: version,
+                 unknownIdLength: unknownIdLengths[command.name] ?? StateKey.unknownCommandIdBytes)
+    }
+
+    private mutating func rekey(_ name: String, idLength: Int) {
+        unknownIdLengths[name] = idLength
+        for index in order.indices where order[index].name == name {
+            guard let encoded = values.removeValue(forKey: order[index]) else { continue }
+            let key = StateKey(name: name, id: Array(encoded.dropFirst(RawCommand.headerLength).prefix(idLength)))
+            order[index] = key
+            values[key] = encoded
+        }
     }
 
     mutating func set(_ key: StateKey, encoded: [UInt8]) {

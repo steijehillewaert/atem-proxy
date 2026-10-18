@@ -77,6 +77,38 @@ import Testing
         #expect(!session.hasPendingOutbound)
     }
 
+    @Test func resendsWholeWindowInOrder() {
+        let wire = Wire()
+        let session = ReliableSession(sessionId: 1, now: 0) { wire.transmit($0) }
+        session.enqueue(payload: [1])
+        session.tick(now: 0)
+        session.enqueue(payload: [2])
+        session.tick(now: 0.02)
+        #expect(wire.sent.count == 2)
+        // The oldest packet is overdue: the receiver dropped everything after it, so both go again.
+        session.tick(now: 0.035)
+        #expect(wire.sent.count == 4)
+        #expect(wire.sent[2...].map(\.payload) == [[1], [2]])
+        #expect(wire.sent[2...].allSatisfy { $0.flags.contains(.retransmit) })
+    }
+
+    @Test func deadlineFollowsPendingWork() {
+        let wire = Wire()
+        let session = ReliableSession(sessionId: 1, now: 0) { wire.transmit($0) }
+        #expect(session.nextDeadline == nil)
+        session.enqueue(payload: [1])
+        #expect(session.nextDeadline == -.infinity) // send right away
+        session.tick(now: 1)
+        #expect(session.nextDeadline == 1 + ReliableSession.resendAfter)
+        _ = session.receive(Packet(flags: .ackReply, sessionId: 1, ackedId: wire.sent[0].packetId), now: 1.001)
+        #expect(session.nextDeadline == nil)
+
+        // A received packet whose ack is delayed for batching.
+        _ = session.receive(Packet(flags: .ackRequest, sessionId: 1, packetId: 1, payload: [7]), now: 2)
+        _ = session.receive(Packet(flags: .ackRequest, sessionId: 1, packetId: 2, payload: [8]), now: 2.001)
+        #expect(session.nextDeadline == 2.001 + ReliableSession.ackDelay)
+    }
+
     @Test func limitsInFlight() {
         let wire = Wire()
         let session = ReliableSession(sessionId: 1, now: 0) { wire.transmit($0) }
@@ -124,6 +156,21 @@ import Testing
             cache.set(StateKey(command: command, version: version), encoded: command.bytes)
         }
         #expect(cache.encodedCommands() == [updated.bytes, other.bytes])
+    }
+
+    @Test func unknownCommandKeyGrowsWhenDumpCollides() {
+        // Like the Constellation's KBfT: a 4-byte tag, then the index that tells items apart.
+        var cache = StateCache()
+        let a0 = RawCommand(name: "Zzzz", body: Array("TrPs".utf8) + [0, 0, 0x77, 0x19])
+        let a1 = RawCommand(name: "Zzzz", body: Array("TrPs".utf8) + [0, 1, 0xE8, 0x19])
+        let a1Updated = RawCommand(name: "Zzzz", body: Array("TrPs".utf8) + [0, 1, 0x00, 0x00])
+        cache.set(a0, version: version, learning: true)
+        cache.set(a1, version: version, learning: true)
+        #expect(cache.encodedCommands() == [a0.bytes, a1.bytes])
+
+        // After the dump, updates replace their own item instead of adding entries.
+        cache.set(a1Updated, version: version, learning: false)
+        #expect(cache.encodedCommands() == [a0.bytes, a1Updated.bytes])
     }
 
     @Test func versionDecoding() {

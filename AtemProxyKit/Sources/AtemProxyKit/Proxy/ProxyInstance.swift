@@ -17,7 +17,9 @@ public final class ProxyInstance: @unchecked Sendable {
     /// Called on the main queue for each log line.
     public var onLog: (@MainActor @Sendable (ProxyLogEntry) -> Void)?
 
-    private static let tickInterval = 0.002
+    /// Housekeeping tick for pings, timeouts and reconnects. Sends, acks and resends
+    /// schedule their own earlier ticks, so an idle proxy doesn't spin.
+    private static let idleTickInterval = 0.05
     private static let reconnectInterval = 1.0
     private static let clientPingInterval = 0.2
     private static let statusInterval = 0.25
@@ -28,6 +30,7 @@ public final class ProxyInstance: @unchecked Sendable {
     private let queue: DispatchQueue
     private let logger: Logger
     private var timer: DispatchSourceTimer?
+    private var nextTick = -Double.infinity
     private var running = false
 
     // Upstream
@@ -91,6 +94,8 @@ public final class ProxyInstance: @unchecked Sendable {
     /// Address clients connect to; resolves port 0 to the port actually bound.
     var listenEndpoint: IPv4Endpoint? { queue.sync { listenSocket?.localEndpoint } }
 
+    var clientCount: Int { queue.sync { clients.count } }
+
     // MARK: - Lifecycle
 
     private var now: Double { ProcessInfo.processInfo.systemUptime }
@@ -128,10 +133,11 @@ public final class ProxyInstance: @unchecked Sendable {
         }
 
         let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now(), repeating: Self.tickInterval, leeway: .milliseconds(1))
+        timer.schedule(deadline: .now(), repeating: Self.idleTickInterval, leeway: .milliseconds(1))
         timer.setEventHandler { [weak self] in self?.tick() }
         timer.resume()
         self.timer = timer
+        nextTick = now
 
         resolveAtem()
         publishStatus(force: true)
@@ -195,9 +201,27 @@ public final class ProxyInstance: @unchecked Sendable {
 
     private func tick() {
         let now = self.now
+        nextTick = now + Self.idleTickInterval
         tickUpstream(now: now)
         tickClients(now: now)
         if statusDirty || now - lastStatusPublish > 1 { publishStatus() }
+        scheduleTick()
+    }
+
+    /// Moves the next tick forward to when a session next has work. Polling every 2 ms
+    /// instead cost a few percent CPU per proxy even without clients.
+    private func scheduleTick() {
+        guard let timer else { return }
+        var deadline = upstream?.nextDeadline ?? .infinity
+        for client in clients.values {
+            deadline = min(deadline, client.session.nextDeadline ?? .infinity)
+        }
+        guard deadline < nextTick else { return }
+        let now = self.now
+        // Never earlier than now; a deadline that already passed runs straight away.
+        let delay = max(0, deadline - now)
+        nextTick = now + delay
+        timer.schedule(deadline: .now() + delay, repeating: Self.idleTickInterval, leeway: .microseconds(500))
     }
 
     private func tickUpstream(now: Double) {
@@ -267,6 +291,7 @@ public final class ProxyInstance: @unchecked Sendable {
     private func receiveFromAtem(_ bytes: [UInt8], from: IPv4Endpoint) {
         guard from == atem, let upstream, let packet = Packet(bytes: bytes) else { return }
         let now = self.now
+        defer { scheduleTick() }
 
         if packet.flags.contains(.handshake) {
             switch packet.payload.first {
@@ -334,7 +359,7 @@ public final class ProxyInstance: @unchecked Sendable {
                 log(.debug, "Forwarding unknown command \(command.name)")
             }
             let encoded = command.bytes
-            cache.set(StateKey(command: command, version: version), encoded: encoded)
+            cache.set(command, version: version, learning: !stateReady)
             broadcast.append(encoded)
         }
         status.cachedStateEntries = cache.count
@@ -366,10 +391,23 @@ public final class ProxyInstance: @unchecked Sendable {
     private func receiveFromClient(_ bytes: [UInt8], from: IPv4Endpoint) {
         guard let packet = Packet(bytes: bytes) else { return }
         let now = self.now
+        defer { scheduleTick() }
 
         if packet.flags.contains(.handshake) {
+            guard let socket = listenSocket else { return }
+            if packet.payload.first == Handshake.disconnect {
+                // The client closes its session; confirm like the ATEM does, so it doesn't retry.
+                if clients[from] != nil {
+                    removeClient(from)
+                    log(.info, "Client \(from) disconnected")
+                }
+                let reply = Packet(flags: .handshake, sessionId: packet.sessionId, unknown: packet.unknown,
+                                   payload: Handshake.disconnectedPayload)
+                socket.send(reply.bytes, to: from)
+                return
+            }
             // Like the C# proxy: only accept clients once there is state to give them.
-            guard stateReady, let socket = listenSocket else { return }
+            guard stateReady else { return }
             if clients[from] != nil { removeClient(from) }
 
             nextServerSessionId = (nextServerSessionId &+ 1) & 0x7FFF
@@ -380,7 +418,7 @@ public final class ProxyInstance: @unchecked Sendable {
             clients[from] = Client(session: session, connectedAt: Date(), lastPing: now)
 
             let reply = Packet(flags: .handshake, sessionId: packet.sessionId, unknown: packet.unknown,
-                               payload: Handshake.serverPayload)
+                               payload: Handshake.serverPayload(sessionId: serverSession))
             socket.send(reply.bytes, to: from)
             log(.info, "Client \(from) connected")
             markDirty()
@@ -393,7 +431,8 @@ public final class ProxyInstance: @unchecked Sendable {
         if client.session.isOpen && !client.synchronized {
             // First ack from the client: send it the full state, like a real ATEM would.
             var dump = cache.encodedCommands()
-            dump.append(RawCommand(name: Self.initCompleteCommand, body: [0, 0, 0, 0]).bytes)
+            // Real switchers (SDI Pro ISO, Constellation on 9.6) set the first byte; the rest is padding.
+            dump.append(RawCommand(name: Self.initCompleteCommand, body: [1, 0, 0, 0]).bytes)
             client.session.enqueue(payloads: RawCommand.pack(dump))
             clients[from]?.synchronized = true
             markDirty()
@@ -494,6 +533,14 @@ public final class ProxyInstance: @unchecked Sendable {
 enum Handshake {
     static let accepted: UInt8 = 0x02
     static let rejected: UInt8 = 0x03
+    static let disconnect: UInt8 = 0x04
+    static let disconnected: UInt8 = 0x05
     static let clientPayload: [UInt8] = [0x01, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00]
-    static let serverPayload: [UInt8] = [0x02, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00]
+    static let disconnectedPayload: [UInt8] = [disconnected, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+
+    /// The ATEM puts the new session id in its accept reply. Some clients (MiddleControl)
+    /// take it from here instead of from the packets that follow, and ignore any other session.
+    static func serverPayload(sessionId: UInt16) -> [UInt8] {
+        [accepted, 0x00, UInt8((sessionId >> 8) & 0x7F), UInt8(sessionId & 0xFF), 0x00, 0x00, 0x00, 0x00]
+    }
 }

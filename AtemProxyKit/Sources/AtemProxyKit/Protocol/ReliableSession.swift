@@ -14,7 +14,7 @@ final class ReliableSession {
     private struct InFlight {
         let packetId: UInt16
         let payload: [UInt8]
-        var lastSent: Double?
+        var lastSent: Double
     }
 
     var sessionId: UInt16
@@ -44,6 +44,17 @@ final class ReliableSession {
     func hasTimedOut(now: Double) -> Bool { now - lastReceived > Self.timeout }
 
     var hasPendingOutbound: Bool { !queue.isEmpty || !inFlight.isEmpty }
+
+    /// When `tick` next has work: queued data to send, a delayed ack or a resend.
+    /// `nil` when only an incoming packet or a new payload can create work.
+    var nextDeadline: Double? {
+        if !queue.isEmpty && inFlight.count < Self.maxInFlight { return -.infinity }
+        var deadline = ackWaitingSince.map { $0 + Self.ackDelay }
+        if let oldest = inFlight.first {
+            deadline = min(deadline ?? .infinity, oldest.lastSent + Self.resendAfter)
+        }
+        return deadline
+    }
 
     func reset(now: Double) {
         lastReceived = now
@@ -104,22 +115,26 @@ final class ReliableSession {
         }
 
         pruneInFlight()
-        if inFlight.contains(where: { $0.lastSent.map { now - $0 > Self.resendAfter } ?? true }) {
+        // Go-back-N: receivers drop anything after a gap, so once the oldest packet is overdue
+        // the whole window has to go again, in order. Resending only overdue packets made a
+        // lossy client recover one packet per timeout instead (seconds behind at 20% loss).
+        if let oldest = inFlight.first, now - oldest.lastSent >= Self.resendAfter {
             packetsResent += inFlight.count
             for index in inFlight.indices {
-                send(packetId: inFlight[index].packetId, payload: inFlight[index].payload,
-                     retransmit: inFlight[index].lastSent != nil)
+                send(packetId: inFlight[index].packetId, payload: inFlight[index].payload, retransmit: true)
                 inFlight[index].lastSent = now
             }
             return
         }
 
-        while inFlight.count < Self.maxInFlight && !queue.isEmpty {
-            let payload = queue.removeFirst()
+        let count = min(Self.maxInFlight - inFlight.count, queue.count)
+        guard count > 0 else { return }
+        for payload in queue.prefix(count) {
             let packetId = nextPacketId()
             send(packetId: packetId, payload: payload, retransmit: false)
             inFlight.append(InFlight(packetId: packetId, payload: payload, lastSent: now))
         }
+        queue.removeFirst(count)
     }
 
     /// Sends an ack for the latest received packet, or packet 0 when forced.

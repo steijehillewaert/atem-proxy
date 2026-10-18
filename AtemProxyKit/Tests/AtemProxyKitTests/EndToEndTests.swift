@@ -44,7 +44,7 @@ final class FakeAtem: @unchecked Sendable {
             peer = from
             sentDump = false
             session = ReliableSession(sessionId: 0x8001, now: now) { [unowned self] in self.socket.send($0, to: from) }
-            socket.send(Packet(flags: .handshake, sessionId: packet.sessionId, payload: Handshake.serverPayload).bytes, to: from)
+            socket.send(Packet(flags: .handshake, sessionId: packet.sessionId, payload: Handshake.serverPayload(sessionId: 0x8001)).bytes, to: from)
             return
         }
         guard from == peer, let session else { return }
@@ -73,6 +73,7 @@ final class FakeClient: @unchecked Sendable {
     private var timer: DispatchSourceTimer?
     private var received: [RawCommand] = []
     private var connected = false
+    private var disconnected = false
     private var lastHello = 0.0
     let server: IPv4Endpoint
 
@@ -106,14 +107,34 @@ final class FakeClient: @unchecked Sendable {
         queue.async { self.session.enqueue(payload: command.bytes) }
     }
 
+    var wasDisconnected: Bool { queue.sync { disconnected } }
+
+    /// Closes the session the way MiddleControl does.
+    func disconnect() {
+        queue.async {
+            let bye = Packet(flags: .handshake, sessionId: self.session.sessionId,
+                             payload: [Handshake.disconnect, 0, 0, 0, 0, 0, 0, 0])
+            self.socket.send(bye.bytes, to: self.server)
+        }
+    }
+
     private func receive(_ bytes: [UInt8]) {
         guard let packet = Packet(bytes: bytes) else { return }
         if packet.flags.contains(.handshake) {
-            connected = true
-            session.sendAck(force: true)
+            switch packet.payload.first {
+            case Handshake.accepted where !connected && packet.payload.count >= 4:
+                connected = true
+                session.sendAck(force: true)
+                // Strict like MiddleControl: the session id comes from the accept reply only.
+                session.sessionId = 0x8000 | UInt16(packet.payload[2]) << 8 | UInt16(packet.payload[3])
+            case Handshake.disconnected:
+                disconnected = true
+            default:
+                break
+            }
             return
         }
-        session.sessionId = packet.sessionId
+        guard packet.sessionId == session.sessionId else { return }
         if let payload = session.receive(packet, now: ProcessInfo.processInfo.systemUptime) {
             received += RawCommand.parse(payload: payload)
         }
@@ -198,5 +219,23 @@ func eventually(timeout: Double = 5, _ condition: () -> Bool) async throws {
         client.send(RawCommand(name: "CPvI", body: [0, 0, 0, 2]))
         try await eventually { atem.commandsReceived.contains { $0.name == "CPvI" } }
         #expect(!atem.commandsReceived.contains { $0.name == "LOCK" })
+    }
+
+    @Test func disconnectRequestClosesTheSession() async throws {
+        let atem = try FakeAtem(product: "ATEM Mini", program: 1)
+        let proxy = ProxyInstance(configuration: ProxyConfiguration(
+            name: "D", atemHost: "127.0.0.1", atemPort: atem.endpoint.port,
+            listenIP: "127.0.0.1", listenPort: 0, advertise: false))
+        proxy.start()
+        defer { proxy.stopAndWait() }
+        try await eventually { proxy.isSynchronized }
+
+        let client = try FakeClient(server: proxy.listenEndpoint!)
+        try await eventually { client.commandsReceived.contains { $0.name == "InCm" } }
+        #expect(proxy.clientCount == 1)
+
+        client.disconnect()
+        try await eventually { client.wasDisconnected }
+        #expect(proxy.clientCount == 0)
     }
 }
