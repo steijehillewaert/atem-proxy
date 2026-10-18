@@ -14,31 +14,40 @@ public final class AtemBrowser {
     public private(set) var devices: [DiscoveredAtem] = []
     public var onChange: (([DiscoveredAtem]) -> Void)?
 
-    private var browser: NWBrowser?
+    /// Older firmware advertises `_blackmagic._tcp`. Newer firmware (seen on 9.6, SDI Pro ISO and
+    /// 2 M/E Constellation HD) only advertises `_switcher_ctrl._udp`, named after the model.
+    static let serviceTypes = [BonjourAdvertiser.serviceType, "_switcher_ctrl._udp"]
+
+    private var browsers: [NWBrowser] = []
+    private var results: [String: Set<NWBrowser.Result>] = [:]
     private var resolving: [NWEndpoint: NWConnection] = [:]
     private var found: [NWEndpoint: DiscoveredAtem] = [:]
 
     public init() {}
 
     public func start() {
-        guard browser == nil else { return }
-        let browser = NWBrowser(for: .bonjourWithTXTRecord(type: BonjourAdvertiser.serviceType, domain: nil),
-                                using: .udp)
-        browser.browseResultsChangedHandler = { [weak self] results, _ in
-            Task { @MainActor in self?.update(results) }
+        guard browsers.isEmpty else { return }
+        for type in Self.serviceTypes {
+            let browser = NWBrowser(for: .bonjourWithTXTRecord(type: type, domain: nil), using: .udp)
+            browser.browseResultsChangedHandler = { [weak self] results, _ in
+                Task { @MainActor in self?.update(results, type: type) }
+            }
+            browser.start(queue: .main)
+            browsers.append(browser)
         }
-        browser.start(queue: .main)
-        self.browser = browser
     }
 
     public func stop() {
-        browser?.cancel()
-        browser = nil
+        browsers.forEach { $0.cancel() }
+        browsers.removeAll()
+        results.removeAll()
         resolving.values.forEach { $0.cancel() }
         resolving.removeAll()
     }
 
-    private func update(_ results: Set<NWBrowser.Result>) {
+    private func update(_ latest: Set<NWBrowser.Result>, type: String) {
+        results[type] = latest
+        let results = results.values.reduce(into: Set<NWBrowser.Result>()) { $0.formUnion($1) }
         let endpoints = Set(results.map(\.endpoint))
         for result in results where found[result.endpoint] == nil && resolving[result.endpoint] == nil {
             if case let .bonjour(txt) = result.metadata, txt["internal version"] == "AtemProxy" { continue }
