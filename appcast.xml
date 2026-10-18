@@ -4,17 +4,13 @@
     <title>ATEM Proxy</title>
     <link>https://github.com/steijehillewaert/atem-proxy</link>
     <item>
-      <title>Version 2.1.3</title>
-      <pubDate>Sun, 18 Oct 2026 18:54:21 +0000</pubDate>
-      <sparkle:version>2.1.3</sparkle:version>
-      <sparkle:shortVersionString>2.1.3</sparkle:shortVersionString>
+      <title>Version 2.1.4</title>
+      <pubDate>Sun, 18 Oct 2026 19:09:19 +0000</pubDate>
+      <sparkle:version>2.1.4</sparkle:version>
+      <sparkle:shortVersionString>2.1.4</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      <description><![CDATA[- New proxies can pick their own IP address: the app finds a free address next to the ATEM's and adds it to the Mac with one password prompt.<br>
-- Proxy addresses added by 2.1.2 and earlier had a wrong netmask and could be unreachable. They are now repaired automatically and the affected proxies restart.<br>
-- ATEM Software Control no longer reconnects every few seconds through the proxy.<br>
-- Cuedrift now works through the proxy.<br>
-- Bonjour advertises the proxy under its own name.<br>]]></description>
-      <enclosure url="https://github.com/steijehillewaert/atem-proxy/releases/download/v2.1.3/ATEM-Proxy-2.1.3.zip" type="application/octet-stream" sparkle:edSignature="znD9ak7ABfWv8I8oZ2Bpb0QH15su8l/H/4QdwhDOpvSH1BXwX/f1Pq5PUJBX3/V2cgHblFWFU1NeSBDjnIFSCQ==" length="2118378" />
+      <description><![CDATA[- Lower idle CPU use (about 20% to 12%): the app only refreshes proxy status when something actually changes.<br>]]></description>
+      <enclosure url="https://github.com/steijehillewaert/atem-proxy/releases/download/v2.1.4/ATEM-Proxy-2.1.4.zip" type="application/octet-stream" sparkle:edSignature="G2D01/TjM9PPQM76PbvOmpKW1Vc5qKlcMOrSGbkQ7I/Z7pwScvb+QQFr92jcysA3bmU3vtqIcAamJHX6T63tDw==" length="2118395" />
     </item>
   </channel>
 </rss>
