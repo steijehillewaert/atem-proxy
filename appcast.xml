@@ -4,13 +4,13 @@
     <title>ATEM Proxy</title>
     <link>https://github.com/steijehillewaert/atem-proxy</link>
     <item>
-      <title>Version 2.1.4</title>
-      <pubDate>Sun, 18 Oct 2026 19:09:19 +0000</pubDate>
-      <sparkle:version>2.1.4</sparkle:version>
-      <sparkle:shortVersionString>2.1.4</sparkle:shortVersionString>
+      <title>Version 2.1.5</title>
+      <pubDate>Sun, 18 Oct 2026 19:30:03 +0000</pubDate>
+      <sparkle:version>2.1.5</sparkle:version>
+      <sparkle:shortVersionString>2.1.5</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      <description><![CDATA[- Lower idle CPU use (about 20% to 12%): the app only refreshes proxy status when something actually changes.<br>]]></description>
-      <enclosure url="https://github.com/steijehillewaert/atem-proxy/releases/download/v2.1.4/ATEM-Proxy-2.1.4.zip" type="application/octet-stream" sparkle:edSignature="G2D01/TjM9PPQM76PbvOmpKW1Vc5qKlcMOrSGbkQ7I/Z7pwScvb+QQFr92jcysA3bmU3vtqIcAamJHX6T63tDw==" length="2118395" />
+      <description><![CDATA[Maintenance build. No functional changes since 2.1.4.<br>]]></description>
+      <enclosure url="https://github.com/steijehillewaert/atem-proxy/releases/download/v2.1.5/ATEM-Proxy-2.1.5.zip" type="application/octet-stream" sparkle:edSignature="m6kjs6ZaAIovD/oC1DsfDUN4vydWJOlIDmENBmlsoHpk/D9KCcxvzStQEttZMn8K5WQxX/j8M2aKE+mwMfYNBQ==" length="2118381" />
     </item>
   </channel>
 </rss>
