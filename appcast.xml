@@ -4,13 +4,17 @@
     <title>ATEM Proxy</title>
     <link>https://github.com/steijehillewaert/atem-proxy</link>
     <item>
-      <title>Version 2.1.2</title>
-      <pubDate>Sun, 18 Oct 2026 18:25:36 +0000</pubDate>
-      <sparkle:version>2.1.2</sparkle:version>
-      <sparkle:shortVersionString>2.1.2</sparkle:shortVersionString>
+      <title>Version 2.1.3</title>
+      <pubDate>Sun, 18 Oct 2026 18:54:21 +0000</pubDate>
+      <sparkle:version>2.1.3</sparkle:version>
+      <sparkle:shortVersionString>2.1.3</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      <description><![CDATA[- The address picker now finds ATEMs on firmware 9.6, which only advertise _switcher_ctrl._udp.<br>]]></description>
-      <enclosure url="https://github.com/steijehillewaert/atem-proxy/releases/download/v2.1.2/ATEM-Proxy-2.1.2.zip" type="application/octet-stream" sparkle:edSignature="CIJLVkgaIGJRK1xDxo2/BsAzPe2XoI/IuGphv6ntgghzq/v10/UVUm1LsK63WkNZ/YJ2Sgvu5uOlRAsj1dgOBw==" length="2079587" />
+      <description><![CDATA[- New proxies can pick their own IP address: the app finds a free address next to the ATEM's and adds it to the Mac with one password prompt.<br>
+- Proxy addresses added by 2.1.2 and earlier had a wrong netmask and could be unreachable. They are now repaired automatically and the affected proxies restart.<br>
+- ATEM Software Control no longer reconnects every few seconds through the proxy.<br>
+- Cuedrift now works through the proxy.<br>
+- Bonjour advertises the proxy under its own name.<br>]]></description>
+      <enclosure url="https://github.com/steijehillewaert/atem-proxy/releases/download/v2.1.3/ATEM-Proxy-2.1.3.zip" type="application/octet-stream" sparkle:edSignature="znD9ak7ABfWv8I8oZ2Bpb0QH15su8l/H/4QdwhDOpvSH1BXwX/f1Pq5PUJBX3/V2cgHblFWFU1NeSBDjnIFSCQ==" length="2118378" />
     </item>
   </channel>
 </rss>
