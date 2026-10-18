@@ -353,6 +353,7 @@ public final class ProxyInstance: @unchecked Sendable {
                 if !stateReady {
                     stateReady = true
                     status.upstream = .connected
+                    markDirty()
                     log(.info, "Synchronized \(cache.count) state entries from \(status.productName ?? "ATEM")")
                     startAdvertising()
                 }
@@ -367,8 +368,10 @@ public final class ProxyInstance: @unchecked Sendable {
             cache.set(command, version: version, learning: !stateReady)
             broadcast.append(encoded)
         }
+        // Counters only: they go out with the once-a-second refresh. Marking the status dirty
+        // here published it 4 times a second forever (the ATEM sends timecode every frame),
+        // and redrawing the app's window for that cost ~20% CPU with nothing happening.
         status.cachedStateEntries = cache.count
-        markDirty()
 
         if !broadcast.isEmpty {
             let payloads = RawCommand.pack(broadcast)
