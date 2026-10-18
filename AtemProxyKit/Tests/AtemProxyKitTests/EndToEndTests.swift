@@ -141,6 +141,25 @@ final class FakeClient: @unchecked Sendable {
     }
 }
 
+/// Raw UDP endpoint that records every packet it gets, for checking exact wire behaviour.
+final class PacketRecorder: @unchecked Sendable {
+    let queue = DispatchQueue(label: "packet-recorder")
+    private var socket: UDPSocket!
+    private var packets: [Packet] = []
+
+    init() throws {
+        socket = try UDPSocket(bind: IPv4Endpoint(ip: "127.0.0.1", port: 0)!, queue: queue) { [unowned self] bytes, _ in
+            if let packet = Packet(bytes: bytes) { self.packets.append(packet) }
+        }
+    }
+
+    var received: [Packet] { queue.sync { packets } }
+
+    func send(_ packet: Packet, to server: IPv4Endpoint) {
+        queue.async { self.socket.send(packet.bytes, to: server) }
+    }
+}
+
 func eventually(timeout: Double = 5, _ condition: () -> Bool) async throws {
     let deadline = Date().addingTimeInterval(timeout)
     while !condition() {
@@ -219,6 +238,28 @@ func eventually(timeout: Double = 5, _ condition: () -> Bool) async throws {
         client.send(RawCommand(name: "CPvI", body: [0, 0, 0, 2]))
         try await eventually { atem.commandsReceived.contains { $0.name == "CPvI" } }
         #expect(!atem.commandsReceived.contains { $0.name == "LOCK" })
+    }
+
+    @Test func sendsAnEmptyPacketBeforeTheState() async throws {
+        let atem = try FakeAtem(product: "ATEM Mini", program: 1)
+        let proxy = ProxyInstance(configuration: ProxyConfiguration(
+            name: "E", atemHost: "127.0.0.1", atemPort: atem.endpoint.port,
+            listenIP: "127.0.0.1", listenPort: 0, advertise: false))
+        proxy.start()
+        defer { proxy.stopAndWait() }
+        try await eventually { proxy.isSynchronized }
+        let server = proxy.listenEndpoint!
+
+        // Handshake by hand, as Cuedrift does: hello, then a bare ack, then wait.
+        let recorder = try PacketRecorder()
+        recorder.send(Packet(flags: .handshake, sessionId: 0x1337, payload: [1, 0, 0, 0, 0, 0, 0, 0]), to: server)
+        try await eventually { recorder.received.contains { $0.flags.contains(.handshake) } }
+        recorder.send(Packet(flags: .ackReply, sessionId: 0x1337, ackedId: 0), to: server)
+        try await eventually { recorder.received.contains { $0.flags.contains(.ackRequest) } }
+
+        let first = recorder.received.first { $0.flags.contains(.ackRequest) }
+        #expect(first?.payload.isEmpty == true)
+        #expect(first?.packetId == 1)
     }
 
     @Test func disconnectRequestClosesTheSession() async throws {

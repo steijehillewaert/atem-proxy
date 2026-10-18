@@ -463,6 +463,9 @@ public final class ProxyInstance: @unchecked Sendable {
             var dump = cache.encodedCommands()
             // Real switchers (SDI Pro ISO, Constellation on 9.6) set the first byte; the rest is padding.
             dump.append(RawCommand(name: Self.initCompleteCommand, body: [1, 0, 0, 0]).bytes)
+            // The ATEM sends an empty reliable packet before its state. Some clients (Cuedrift)
+            // only start acking once they've seen one; without it they never ack and time out.
+            client.session.enqueuePing()
             client.session.enqueue(payloads: RawCommand.pack(dump))
             clients[from]?.synchronized = true
             markDirty()
@@ -515,7 +518,6 @@ public final class ProxyInstance: @unchecked Sendable {
         guard configuration.advertise, advertiser == nil else { return }
         advertiser = BonjourAdvertiser(
             name: configuration.name,
-            productName: status.productName,
             listenIP: configuration.listenIP,
             port: configuration.listenPort,
             uniqueId: configuration.deviceUniqueId,

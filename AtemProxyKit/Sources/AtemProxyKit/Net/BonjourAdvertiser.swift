@@ -19,14 +19,15 @@ final class BonjourAdvertiser {
     private var service: DNSServiceRef?
     private var hostRecord: DNSRecordRef?
 
-    init(name: String, productName: String?, listenIP: String?, port: UInt16, uniqueId: String,
+    init(name: String, listenIP: String?, port: UInt16, uniqueId: String,
          queue: DispatchQueue, onError: @escaping (String) -> Void) {
         var txt = TXTRecordRef()
         TXTRecordCreate(&txt, 0, nil)
         defer { TXTRecordDeallocate(&txt) }
         let entries = [
             ("txtvers", "1"),
-            ("name", "Blackmagic \(productName ?? "ATEM") (\(name))"),
+            // Clients list the proxy under this, so it is exactly the name given in the app.
+            ("name", name),
             ("class", "AtemSwitcher"),
             ("protocol version", "0.0"),
             ("internal version", "AtemProxy"),
