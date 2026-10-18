@@ -14,6 +14,8 @@ public struct ProxyConfiguration: Codable, Hashable, Identifiable, Sendable {
     /// one local IP per ATEM (see `IPAlias`), unless every client lets you pick a port.
     public var listenIP: String?
     public var listenPort: UInt16
+    /// Interface the app added `listenIP` to as an alias, so it can restore it after a restart.
+    public var aliasInterface: String?
     /// Advertise over Bonjour so ATEM Software Control lists the proxy.
     public var advertise: Bool
     /// Start when the app launches.
@@ -21,13 +23,14 @@ public struct ProxyConfiguration: Codable, Hashable, Identifiable, Sendable {
 
     public init(id: UUID = UUID(), name: String, atemHost: String, atemPort: UInt16 = IPv4Endpoint.atemPort,
                 listenIP: String? = nil, listenPort: UInt16 = IPv4Endpoint.atemPort,
-                advertise: Bool = true, autoStart: Bool = true) {
+                aliasInterface: String? = nil, advertise: Bool = true, autoStart: Bool = true) {
         self.id = id
         self.name = name
         self.atemHost = atemHost
         self.atemPort = atemPort
         self.listenIP = listenIP
         self.listenPort = listenPort
+        self.aliasInterface = aliasInterface
         self.advertise = advertise
         self.autoStart = autoStart
     }

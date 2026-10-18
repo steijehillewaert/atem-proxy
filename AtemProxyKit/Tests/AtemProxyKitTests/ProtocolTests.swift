@@ -1,4 +1,5 @@
 @testable import AtemProxyKit
+import Foundation
 import Testing
 
 @Suite struct PacketTests {
@@ -142,5 +143,20 @@ import Testing
         #expect(!a.validationErrors(among: [a, b]).isEmpty)
         #expect(a.validationErrors(among: [a, c, d]).isEmpty)
         #expect(!ProxyConfiguration(name: "", atemHost: "").validationErrors(among: []).isEmpty)
+    }
+}
+
+@Suite struct ConfigurationCodingTests {
+    @Test func decodesConfigurationsSavedBeforeAliasInterface() throws {
+        let json = #"[{"id":"6F1B2C3D-0000-4000-8000-000000000001","name":"A","atemHost":"10.0.0.1","atemPort":9910,"listenPort":9910,"advertise":true,"autoStart":true}]"#
+        let decoded = try JSONDecoder().decode([ProxyConfiguration].self, from: Data(json.utf8))
+        #expect(decoded.first?.aliasInterface == nil)
+        #expect(decoded.first?.listenIP == nil)
+    }
+
+    @Test func roundTrips() throws {
+        let config = ProxyConfiguration(name: "B", atemHost: "10.0.0.2", listenIP: "10.0.0.201", aliasInterface: "en0")
+        let decoded = try JSONDecoder().decode(ProxyConfiguration.self, from: JSONEncoder().encode(config))
+        #expect(decoded == config)
     }
 }

@@ -22,7 +22,16 @@ public enum IPAlias {
     }
 
     public static func add(ip: String, interface: String) throws {
-        try run("/sbin/ifconfig \(try validated(interface: interface)) alias \(try validated(ip: ip)) 255.255.255.255")
+        try add([(ip: ip, interface: interface)])
+    }
+
+    /// Adds several aliases behind a single administrator prompt.
+    public static func add(_ aliases: [(ip: String, interface: String)]) throws {
+        guard !aliases.isEmpty else { return }
+        let commands = try aliases.map {
+            "/sbin/ifconfig \(try validated(interface: $0.interface)) alias \(try validated(ip: $0.ip)) 255.255.255.255"
+        }
+        try run(commands.joined(separator: " && "))
     }
 
     public static func remove(ip: String, interface: String) throws {
