@@ -10,6 +10,11 @@ import dnssd
 final class BonjourAdvertiser {
     static let serviceType = "_blackmagic._tcp"
 
+    /// The host name registered for a proxy bound to `listenIP`, e.g. atem-proxy-10-80-40-115.local
+    static func hostName(for listenIP: String) -> String {
+        "atem-proxy-\(listenIP.replacingOccurrences(of: ".", with: "-")).local"
+    }
+
     private var connection: DNSServiceRef?
     private var service: DNSServiceRef?
     private var hostRecord: DNSRecordRef?
@@ -39,7 +44,7 @@ final class BonjourAdvertiser {
 
         var host: String?
         if let listenIP, let endpoint = IPv4Endpoint(ip: listenIP, port: port) {
-            let hostName = "atem-proxy-\(listenIP.replacingOccurrences(of: ".", with: "-")).local."
+            let hostName = Self.hostName(for: listenIP) + "."
             var address = endpoint.address // already network order, as the A record wants
             let err = withUnsafeBytes(of: &address) { raw in
                 DNSServiceRegisterRecord(connection, &hostRecord, DNSServiceFlags(kDNSServiceFlagsShared), 0,

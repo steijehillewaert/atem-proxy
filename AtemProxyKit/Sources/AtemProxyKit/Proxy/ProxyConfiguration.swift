@@ -35,6 +35,12 @@ public struct ProxyConfiguration: Codable, Hashable, Identifiable, Sendable {
         self.autoStart = autoStart
     }
 
+    /// How the proxy identifies itself to clients, in the ATEM's own format (32 lowercase hex
+    /// digits): in its Bonjour record and in the `WhoI` command it replays.
+    public var deviceUniqueId: String {
+        id.uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+    }
+
     public var listenDescription: String {
         "\(listenIP ?? "all addresses"):\(listenPort)"
     }

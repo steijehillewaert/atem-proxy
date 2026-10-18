@@ -124,6 +124,65 @@ import Testing
     }
 }
 
+@Suite struct IdentityTests {
+    /// WhoI as sent by a 2 M/E Constellation HD on 9.6.
+    static func constellationWhoI() -> [UInt8] {
+        func field(_ text: String, _ length: Int) -> [UInt8] {
+            Array(text.utf8) + [UInt8](repeating: 0, count: length - text.utf8.count)
+        }
+        return field("e211f3c4cc0449a89100af8913c7c3e1", 32) + field("10.80.40.114", 16)
+            + field("ATEM-2-ME-Constellation-HD.local", 64) + field("ATEM 2 M/E Constellation HD", 64)
+    }
+
+    @Test func whoIAnswersAsTheProxy() {
+        let body = ProxyInstance.identify(Self.constellationWhoI(), uniqueId: "2e1bebe2e1694164b8864b71b500243f",
+                                          ip: "10.80.40.115", host: "atem-proxy-10-80-40-115.local")
+        func text(_ range: Range<Int>) -> String {
+            String(decoding: body[range].prefix { $0 != 0 }, as: UTF8.self)
+        }
+        #expect(body.count == 176)
+        #expect(text(0..<32) == "2e1bebe2e1694164b8864b71b500243f")
+        #expect(text(32..<48) == "10.80.40.115")
+        #expect(text(48..<112) == "atem-proxy-10-80-40-115.local")
+        #expect(text(112..<176) == "ATEM 2 M/E Constellation HD")
+    }
+
+    @Test func deviceUniqueIdUsesTheAtemFormat() {
+        let configuration = ProxyConfiguration(id: UUID(uuidString: "2E1BEBE2-E169-4164-B886-4B71B500243F")!,
+                                               name: "A", atemHost: "10.80.40.114")
+        #expect(configuration.deviceUniqueId == "2e1bebe2e1694164b8864b71b500243f")
+    }
+}
+
+@Suite struct FreeAddressTests {
+    @Test func candidatesStartNextToTheAtem() {
+        let candidates = FreeAddress.candidates(base: "10.80.40.122", near: "10.80.40.114")
+        #expect(Array(candidates.prefix(4)) == ["10.80.40.115", "10.80.40.113", "10.80.40.116", "10.80.40.112"])
+        #expect(candidates.contains("10.80.40.250"))
+        #expect(!candidates.contains("10.80.40.255") && !candidates.contains("10.80.40.0"))
+    }
+
+    @Test func candidatesStayInsideTheRange() {
+        let candidates = FreeAddress.candidates(base: "192.168.1.10", near: "192.168.1.254")
+        #expect(candidates.first == "192.168.1.253")
+        #expect(candidates.allSatisfy { Int($0.split(separator: ".")[3])! <= 254 })
+    }
+
+    @Test func atemOnAnotherNetworkFallsBackToTopOfRange() {
+        #expect(FreeAddress.candidates(base: "10.80.40.122", near: "192.168.10.240").first == "10.80.40.250")
+    }
+
+    @Test func picksTheInterfaceOnTheAtemsNetwork() {
+        let addresses = [
+            LocalInterfaceAddress(interface: "en1", ip: "192.168.0.146", netmask: "255.255.255.0"),
+            LocalInterfaceAddress(interface: "en0", ip: "10.80.40.115", netmask: IPAlias.netmask),
+            LocalInterfaceAddress(interface: "en0", ip: "10.80.40.122", netmask: "255.255.255.0"),
+        ]
+        #expect(FreeAddress.interface(reaching: "10.80.40.114", in: addresses)?.ip == "10.80.40.122")
+        #expect(FreeAddress.interface(reaching: "172.16.0.1", in: addresses) == nil)
+    }
+}
+
 @Suite struct StateKeyTests {
     let version = ProtocolVersion.latestKnown
 

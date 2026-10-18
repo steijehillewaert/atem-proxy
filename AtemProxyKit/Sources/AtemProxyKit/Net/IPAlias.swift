@@ -25,13 +25,27 @@ public enum IPAlias {
         try add([(ip: ip, interface: interface)])
     }
 
-    /// Adds several aliases behind a single administrator prompt.
+    /// Netmask for app-added aliases: the address alone, so it never claims a subnet route.
+    public static let netmask = "255.255.255.255"
+
+    /// Adds several aliases behind a single administrator prompt. An alias that is already
+    /// there is removed and added again, which repairs ones added by versions before 2.1.3.
     public static func add(_ aliases: [(ip: String, interface: String)]) throws {
         guard !aliases.isEmpty else { return }
-        let commands = try aliases.map {
-            "/sbin/ifconfig \(try validated(interface: $0.interface)) alias \(try validated(ip: $0.ip)) 255.255.255.255"
+        let commands = try aliases.map { alias -> String in
+            let interface = try validated(interface: alias.interface), ip = try validated(ip: alias.ip)
+            // Without the netmask keyword ifconfig takes the mask as a point-to-point destination
+            // and falls back to the class A mask; the address then never becomes local
+            // (no lo0 route, ARP incomplete) and clients can't reach the proxy.
+            return "{ /sbin/ifconfig \(interface) -alias \(ip) 2>/dev/null; "
+                + "/sbin/ifconfig \(interface) alias \(ip) netmask \(netmask); }"
         }
         try run(commands.joined(separator: " && "))
+    }
+
+    /// Whether an address on this Mac is an alias set up the way `add` does it.
+    public static func isWorking(_ address: LocalInterfaceAddress) -> Bool {
+        address.netmask == netmask
     }
 
     public static func remove(ip: String, interface: String) throws {

@@ -167,6 +167,8 @@ func resolveIPv4(host: String, port: UInt16) -> IPv4Endpoint? {
 public struct LocalInterfaceAddress: Hashable, Sendable, Identifiable {
     public var interface: String
     public var ip: String
+    /// Dotted quad, e.g. 255.255.255.0.
+    public var netmask: String = ""
     public var id: String { "\(interface)/\(ip)" }
 }
 
@@ -183,8 +185,11 @@ public func localIPv4Addresses() -> [LocalInterfaceAddress] {
         let flags = Int32(entry.pointee.ifa_flags)
         guard flags & IFF_UP != 0, flags & IFF_LOOPBACK == 0 else { continue }
         let sa = addr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }
+        let mask = entry.pointee.ifa_netmask.map {
+            IPv4Endpoint($0.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }).ip
+        } ?? ""
         result.append(LocalInterfaceAddress(interface: cString(entry.pointee.ifa_name),
-                                            ip: IPv4Endpoint(sa).ip))
+                                            ip: IPv4Endpoint(sa).ip, netmask: mask))
     }
     return result
 }

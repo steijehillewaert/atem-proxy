@@ -26,6 +26,7 @@ public final class ProxyInstance: @unchecked Sendable {
     private static let initCompleteCommand = "InCm"
     private static let versionCommand = "_ver"
     private static let productCommand = "_pin"
+    private static let whoAmICommand = "WhoI"
 
     private let queue: DispatchQueue
     private let logger: Logger
@@ -320,9 +321,13 @@ public final class ProxyInstance: @unchecked Sendable {
         var broadcast: [[UInt8]] = []
         var levels: [[UInt8]] = []
 
-        for command in commands {
+        for var command in commands {
             status.commandsFromAtem += 1
             switch command.name {
+            case Self.whoAmICommand:
+                let identity = identity
+                command.body = Self.identify(command.body, uniqueId: configuration.deviceUniqueId,
+                                             ip: identity.ip, host: identity.host)
             case Self.versionCommand:
                 if let v = ProtocolVersion(versionCommandBody: command.body) {
                     version = v
@@ -378,6 +383,31 @@ public final class ProxyInstance: @unchecked Sendable {
                 client.session.enqueue(payloads: payloads)
             }
         }
+    }
+
+    /// The address and host name clients reach this proxy at.
+    private var identity: (ip: String, host: String) {
+        if let ip = configuration.listenIP { return (ip, BonjourAdvertiser.hostName(for: ip)) }
+        let ip = atem.flatMap { FreeAddress.interface(reaching: $0.ip, in: localIPv4Addresses())?.ip } ?? ""
+        return (ip, ProcessInfo.processInfo.hostName)
+    }
+
+    /// Rewrites `WhoI` so the proxy answers as itself. Layout (NUL padded): unique id (32 ASCII
+    /// hex), IP (16), mDNS host name (64), model name (64). ATEM Software Control compares the
+    /// unique id with the one it found over Bonjour and disconnects on a mismatch, so replaying
+    /// the ATEM's own id made it reconnect every few seconds.
+    static func identify(_ body: [UInt8], uniqueId: String, ip: String, host: String) -> [UInt8] {
+        guard body.count >= 112 else { return body }
+        var body = body
+        func put(_ text: String, at offset: Int, length: Int, terminated: Bool) {
+            let bytes = Array(text.utf8.prefix(terminated ? length - 1 : length))
+            body.replaceSubrange(offset..<offset + length,
+                                 with: bytes + [UInt8](repeating: 0, count: length - bytes.count))
+        }
+        put(uniqueId, at: 0, length: 32, terminated: false)
+        put(ip, at: 32, length: 16, terminated: true)
+        put(host, at: 48, length: 64, terminated: true)
+        return body
     }
 
     private func sendToAtem(_ encoded: [[UInt8]]) {
@@ -488,7 +518,7 @@ public final class ProxyInstance: @unchecked Sendable {
             productName: status.productName,
             listenIP: configuration.listenIP,
             port: configuration.listenPort,
-            uniqueId: configuration.id.uuidString,
+            uniqueId: configuration.deviceUniqueId,
             queue: queue
         ) { [weak self] message in self?.log(.warning, message) }
     }
