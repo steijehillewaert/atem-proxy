@@ -4,19 +4,13 @@
     <title>ATEM Proxy</title>
     <link>https://github.com/steijehillewaert/atem-proxy</link>
     <item>
-      <title>Version 2.1.1</title>
-      <pubDate>Sun, 18 Oct 2026 18:18:48 +0000</pubDate>
-      <sparkle:version>2.1.1</sparkle:version>
-      <sparkle:shortVersionString>2.1.1</sparkle:shortVersionString>
+      <title>Version 2.1.2</title>
+      <pubDate>Sun, 18 Oct 2026 18:25:36 +0000</pubDate>
+      <sparkle:version>2.1.2</sparkle:version>
+      <sparkle:shortVersionString>2.1.2</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      <description><![CDATA[Fixes from testing with real ATEM switchers (2 M/E Constellation HD, SDI Pro ISO) with Companion, AtemStatus, MiddleControl and ATEM Software Control.<br>
-<br>
-- MiddleControl now syncs through the proxy (the handshake reply carries the real session id).<br>
-- Clients that disconnect are acknowledged and dropped right away.<br>
-- New clients get the complete state from Constellation switchers.<br>
-- Lower idle CPU use (2.5% to 1.1%) and lower forwarding latency.<br>
-- More robust packet resending.<br>]]></description>
-      <enclosure url="https://github.com/steijehillewaert/atem-proxy/releases/download/v2.1.1/ATEM-Proxy-2.1.1.zip" type="application/octet-stream" sparkle:edSignature="liNDK5OJTSORJyJNBJLDCaP3k06BTc2yyJS0AfUaSfxBD1LJ9kviJQj7VtEefCfCKfsSrTDWVDPO5JOjlq/LAw==" length="2075355" />
+      <description><![CDATA[- The address picker now finds ATEMs on firmware 9.6, which only advertise _switcher_ctrl._udp.<br>]]></description>
+      <enclosure url="https://github.com/steijehillewaert/atem-proxy/releases/download/v2.1.2/ATEM-Proxy-2.1.2.zip" type="application/octet-stream" sparkle:edSignature="CIJLVkgaIGJRK1xDxo2/BsAzPe2XoI/IuGphv6ntgghzq/v10/UVUm1LsK63WkNZ/YJ2Sgvu5uOlRAsj1dgOBw==" length="2079587" />
     </item>
   </channel>
 </rss>
